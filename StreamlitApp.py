@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 load_dotenv()
 
 OPEN_API_KEY = os.getenv("OPEN_API_KEY")
+openai.api_key = OPEN_API_KEY
 
 def get_question_type(question):
     messages = [
