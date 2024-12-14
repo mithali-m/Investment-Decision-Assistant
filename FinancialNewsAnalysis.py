@@ -3,19 +3,29 @@
 from neo4j import GraphDatabase
 import openai
 import json
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
 
 load_dotenv()
 
 OPEN_API_KEY = os.getenv("OPEN_API_KEY")
-openai.api_key = OPEN_API_KEY
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-# Initialize Neo4j Driver
-driver = GraphDatabase.driver(uri=NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+# Set OpenAI API Key
+openai.api_key = OPEN_API_KEY
+
+# Neo4j connection setup
+driver = None
+try:
+    driver = GraphDatabase.driver(uri=NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+
+    # Your existing code her
+
+finally:
+    if driver:
+        driver.close()
 
 # Function to extract ticker(s) and determine question type
 def analyze_user_question(question):
@@ -44,25 +54,6 @@ def analyze_user_question(question):
 
     return question_type, tickers
 
-# Function to fetch financial statement data from Neo4j
-def fetch_financial_data(ticker):
-    with driver.session() as session:
-        result = session.run('''
-        MATCH (s:Stock_Ticker {ticker: $ticker})-[:HAS_FINANCIAL_STATEMENT_FOR_YEAR]->(y:Year)
-        OPTIONAL MATCH (y)-[:HAS_INCOME_STATEMENT]->(income:Income_Statement)
-        OPTIONAL MATCH (y)-[:HAS_BALANCE_SHEET]->(balance:Balance_Sheet)
-        OPTIONAL MATCH (y)-[:HAS_CASH_FLOW_STATEMENT]->(cashflow:Cash_Flow)
-        RETURN 
-            y.year AS Year,
-            income AS IncomeStatement,
-            balance AS BalanceSheet,
-            cashflow AS CashFlowStatement
-        ORDER BY y.year DESC
-        ''', {"ticker": ticker})
-        data = []
-        for record in result:
-            data.append(record.data())
-        return data
 
 # Function to fetch news data from Neo4j
 def fetch_news_data(ticker):
@@ -88,21 +79,6 @@ def fetch_news_data(ticker):
         deduplicated_news = list(all_news.values())
         return deduplicated_news
 
-# Function to analyze financial data using GPT
-def analyze_financial_data_with_llm(question, ticker, financial_data):
-    financial_data_json = json.dumps(financial_data, default=str)
-    messages = [
-        {"role": "system", "content": "You are a financial assistant analyzing financial statements. The user has asked a question, "
-                                      "and you need to analyze the provided data to generate an answer for the given ticker."},
-        {"role": "user", "content": f"Here is the financial data:\n{financial_data_json}\n\n"
-                                    f"Question: {question}\n and Ticker: {ticker}\n"
-                                    "Please analyze the data and provide a clear and concise answer without mentioning missing data."}
-    ]
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=messages
-    )
-    return response.choices[0].message.content.strip()
 
 # Function to analyze news data using GPT
 def analyze_news_data_with_llm(question, ticker, news_data):
@@ -134,16 +110,8 @@ def financial_news_analysis_main(user_question):
         all_answers = []
 
         for ticker in tickers:
-            if question_type == "financial_statements":
-                financial_data = fetch_financial_data(ticker)
-                if financial_data:
-                    answer = analyze_financial_data_with_llm(user_question, ticker, financial_data)
-                    print(f"\nAnswer for {ticker}:\n{answer}")
-                    all_answers.append(answer)
-                else:
-                    all_answers.append(f"No financial data found for ticker: {ticker}")
 
-            elif question_type == "news":
+            if question_type == "news":
                 news_data = fetch_news_data(ticker)
                 if news_data:
                     answer = analyze_news_data_with_llm(user_question, ticker, news_data)
