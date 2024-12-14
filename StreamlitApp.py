@@ -1,25 +1,27 @@
 import streamlit as st
 import openai
+
+import FinancialStatementAnalysis
 import InvestmentDecisionAssistant
 import StockAnalysis
 import FinancialNewsAnalysis
-from dotenv import load_dotenv
-import os
 import warnings
 warnings.filterwarnings("ignore")
-
-load_dotenv()
+import os
 
 OPEN_API_KEY = os.getenv("OPEN_API_KEY")
+
 openai.api_key = OPEN_API_KEY
 
+# HELPER FUNCTION !!
 def get_question_type(question):
     messages = [
-        {"role": "system",
-         "content": "You are a financial assistant that determines the type of financial information the user is asking about. Your response should only be one of the following: 'Investment-related', 'Stock-related' or 'Financial_or_news-related'" 
-                    "For questions like should I buy or should I sell the company it should be 'Investment-related'."},
-        {"role": "user",
-         "content": f"What type of financial information is being requested in this question: {question}"}
+        {"role": "system", "content": (
+            "You are an assistant that classifies questions. The only possible types are: "
+            "'Investment-related', 'Stock-related', 'Financial-News-related'. "
+            "If the question is about financial statements (e.g., income statement, balance sheet), classify it as 'Financial-Statement-related'."
+        )},
+        {"role": "user", "content": f"Classify this question: {question}"}
     ]
 
     response = openai.ChatCompletion.create(
@@ -36,11 +38,16 @@ def get_answer(question, question_type):
             return answer
         elif question_type == "Stock-related":
             answer = StockAnalysis.stock_analysis_main(question)
-        elif question_type == "Financial_or_news-related":
+        elif question_type == "Financial-News-related":
             answer = FinancialNewsAnalysis.financial_news_analysis_main(question)
+        elif question_type ==  "Financial-Statement-related":
+            answer = FinancialStatementAnalysis.financial_statements_analysis_main(question)
+
     except Exception as e:
         return f"Error: {e}"
     return answer
+
+# HELPER FUNCTION ENDS !!
 
 # Streamlit application
 def main():
@@ -70,6 +77,7 @@ def main():
                 if question_type == "Investment-related":
                     answer = get_answer(user_question, question_type)
                     st.write(answer)
+
                 else:
                     all_answer = get_answer(user_question, question_type)
                     for answer in all_answer:
@@ -78,6 +86,7 @@ def main():
     if st.button("Exit"):
         st.write("Thank you for using the Investment Decision Assistant.")
         st.write("Exiting application...")
+        st.session_state["exit_triggered"] = True
         st.stop()
 
 if __name__ == "__main__":
