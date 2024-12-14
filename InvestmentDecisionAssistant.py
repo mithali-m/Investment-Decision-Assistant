@@ -12,18 +12,21 @@ import json
 import pandas as pd
 import matplotlib.pyplot as plt
 import neo4j.time
-from dotenv import load_dotenv
+
 import os
+from dotenv import load_dotenv
 
 load_dotenv()
 
+FMP_API_KEY = os.getenv("FMP_API_KEY")
 OPEN_API_KEY = os.getenv("OPEN_API_KEY")
-openai.api_key = OPEN_API_KEY
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-# Initialize Neo4j Driver
+# Set OpenAI API Key
+openai.api_key = OPEN_API_KEY
+# Neo4j connection setup
 driver = GraphDatabase.driver(uri=NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 # Function to extract ticker from question
@@ -58,7 +61,7 @@ def fetch_data(query, ticker):
 
 
 # Function to chunk the data into smaller parts
-def chunk_data(data, max_chunk_size=16000):
+def chunk_data(data, max_chunk_size=9000):
     chunks = []
     current_chunk = []
     current_length = 0
@@ -81,7 +84,7 @@ def chunk_data(data, max_chunk_size=16000):
     return chunks
 
 
-def chunk_all_data(stock_data, financial_data, news_data, max_chunk_size=16000):
+def chunk_all_data(stock_data, financial_data, news_data, max_chunk_size=9000):
     return {
         "stock_data_chunks": chunk_data(stock_data, max_chunk_size),
         "financial_data_chunks": chunk_data(financial_data, max_chunk_size),
@@ -89,7 +92,7 @@ def chunk_all_data(stock_data, financial_data, news_data, max_chunk_size=16000):
     }
 
 
-def answer_user_question(question, stock_data, financial_data, news_data, max_chunk_size=16000):
+def answer_user_question(question, stock_data, financial_data, news_data, max_chunk_size=9000):
     # Chunk the data
     chunked_data = chunk_all_data(stock_data, financial_data, news_data, max_chunk_size)
 
@@ -143,23 +146,19 @@ def answer_user_question(question, stock_data, financial_data, news_data, max_ch
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "You are a financial assistant that re-evaluates combined data from stock analysis, financial statements, "
-                    "and news sentiment analysis to provide step-by-step reasoning and a final recommendation."
-                )
+                "content": "You are a financial assistant specializing in data-driven investment analysis. Your role is to evaluate combined insights from stock data, financial statements, and news sentiment to provide a concise, clear recommendation."
             },
             {
                 "role": "user",
                 "content": (
-                    f"Here is the analysis from different datasets:\n{combined_answers}\n\n"
-                    f"The user asked the following question:\n{question}\n\n"
-                    "Please re-evaluate the analyses using chain-of-thought reasoning to provide a final response."
-                    "Use the following steps:\n"
-                    "1. Break down the insights provided by the analysis of stock data, financial data, and news sentiment.\n"
-                    "2. Identify patterns, outliers, or trends in the stock data (open price, close price, and volume).\n"
-                    "3. Analyze financial data, focusing on balance sheets, income statements, and cash flows.\n"
-                    "4. Incorporate sentiment analysis from the news data (positive, negative, or neutral sentiment).\n"
-                    "5. Synthesize all insights to answer the user's question with a clear recommendation."
+                    "Here is the analysis from different datasets:\n{combined_answers}\n\n"
+                    "The user asked the following question:\n{question}\n\n"
+                    "Please analyze the datasets and provide a recommendation using the following steps:\n"
+                    "1. Summarize key insights from stock data (e.g., trends, volume, and recent movements).\n"
+                    "2. Highlight critical points from financial data (e.g. , profitability, growth, and risks).\n"
+                    "3. Assess the sentiment analysis results (positive, negative, or neutral sentiment).\n"
+                    "4. Synthesize the insights from all datasets to form a cohesive analysis.\n"
+                    "5. Conclude with a clear recommendation (Buy/Hold/Sell) providing clear and concise justification."
                 )
             }
         ]
@@ -175,8 +174,9 @@ def summary_analysis(data, question):
             {
                 "role": "system",
                 "content": (
-                    "You are a financial assistant that re-evaluates combined data from stock analysis, financial statements, "
-                    "and news sentiment analysis to provide step-by-step reasoning and a final recommendation."
+                    "You are a financial assistant specializing in investment analysis. Your role is to evaluate insights from stock data, "
+                    "financial statements, and news sentiment to provide a clear and concise recommendation."
+                    "Provide Comparision when Two Tickers Extracted from Question or Else Provide Recommendation for Single Ticker."
                 )
             },
             {
@@ -184,13 +184,13 @@ def summary_analysis(data, question):
                 "content": (
                     f"Here is the analysis from different datasets:\n{data}\n\n"
                     f"The user asked the following question:\n{question}\n\n"
-                    "Please compare the analyses using chain-of-thought reasoning to provide a final response."
-                    "Use the following steps:\n"
-                    "1. Break down the insights provided by the analysis of stock data, financial data, and news sentiment.\n"
-                    "2. Identify patterns, outliers, or trends in the stock data (open price, close price, and volume).\n"
-                    "3. Analyze financial data, focusing on balance sheets, income statements, and cash flows.\n"
-                    "4. Incorporate sentiment analysis from the news data (positive, negative, or neutral sentiment).\n"
-                    "5. Synthesize all insights to answer the user's question with a clear recommendation."
+                    "Only Provide comparison When Two Tickers are Extracted from User Question Provide comparison between both companies with the below instruction with clear and concise Comparison. If only one Ticker is Provided dont do Comparison and provide answer for that single ticker"
+                  "Please analyze the datasets and provide a recommendation using these steps:\n"
+                    "1. Summarize key insights from stock data (e.g., trends, trading volume, and recent price movements).\n"
+                    "2. Highlight critical aspects from financial data (e.g., profitability, growth trends, and risks).\n"
+                    "3. Assess the sentiment analysis (positive, negative, or neutral) and its potential impact.\n"
+                    "4. Synthesize the insights from all datasets to form a cohesive analysis.\n"
+                    "5. Conclude with a clear recommendation (Buy/Hold/Sell) providing clear and concise justification."
                 )
             }
         ]
@@ -240,13 +240,19 @@ def invest_decision_main(user_question):
                         OPTIONAL MATCH (stock)-[:HAS_DAILY_PRICE]->(price:DailyPrice)
                         OPTIONAL MATCH (price)-[:HAS_NEWS]->(news:News)
                         RETURN stock,
-                                COLLECT(price) AS prices,
-                                COLLECT(news {.*, sentiment: news.sentiment, sentiment_score: news.sentiment_score }) AS newsListWithPrice
-                    '''
+                        COLLECT(price) AS prices,
+                        COLLECT({
+                        headline: news.headline,
+                        sentiment: news.sentiment,
+                        sentiment_score: news.sentiment_score,
+                        source: news.source,
+                        ticker: news.ticker,
+                        url: news.url
+                        }) AS newsListWithPrice '''
 
             buy_sell_signal_query = '''
                         MATCH (s:Stock_Ticker {ticker: $ticker})-[:HAS_DAILY_PRICE]->(p:DailyPrice)
-                        WHERE p.date >= date() - duration({days: 90})
+                        WHERE p.date >= date() - duration({days: 30})
                         OPTIONAL MATCH (p)-[:NEXT]->(next:DailyPrice)
                         RETURN p.date AS CurrentDate, p.close AS CurrentClose, 
                                next.date AS NextDate, next.close AS NextClose,
@@ -319,7 +325,7 @@ def invest_decision_main(user_question):
 
         # Combine all answers for multiple tickers
         if all_answers:
-            print("\nSummary of analyses:")
+            print("\nSummary of analysis:")
             summary_answer = summary_analysis("\n".join(all_answers), user_question)
             #print(summary_answer)
             return summary_answer
